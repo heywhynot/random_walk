@@ -1,0 +1,248 @@
+# ==============================================================================
+#                 Ultimate Random Walk Generator - Help
+# ==============================================================================
+#
+# PURPOSE:
+#   This script creates a graphical user interface (GUI) to generate, customize,
+#   and export highly detailed 2D and 3D random walks.
+#
+# DEPENDENCIES:
+#   This script requires two external libraries: Matplotlib and NumPy.
+#
+# HOW TO INSTALL DEPENDENCIES:
+#   1. Open your terminal or command prompt.
+#   2. Type the following command and press Enter:
+#
+#      pip install matplotlib numpy
+#
+#   3. Once the installation is complete, you can run this script without any
+#      further setup.
+#
+# ==============================================================================
+
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.collections import LineCollection
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
+from matplotlib.colors import LinearSegmentedColormap
+import random
+import numpy as np
+import os
+import json
+
+class RandomWalkApp:
+    def __init__(self, master):
+        """Initialize the Random Walk application."""
+        self.master = master
+        self.master.title("Ultimate Random Walk Generator")
+        
+        self.line_styles_map = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
+        
+        self._initialize_variables()
+        self._create_controls()
+        self._create_plot()
+        
+        self.master.geometry(self.window_resolution.get())
+        self._apply_theme()
+        self.run_simulation()
+
+    def _initialize_variables(self, from_preset=None):
+        """Set up all Tkinter variables with default values or from a preset."""
+        defaults = {
+            "num_steps": 50000, "step_min": -1.0, "step_max": 1.0, "start_x": 0.0, "start_y": 0.0,
+            "start_z": 0.0, "drift_x": 0.0, "drift_y": 0.0, "drift_z": 0.0, "dimension": "2D",
+            "jump_chance": 0.02, "jump_dist_min": 2.0, "jump_dist_max": 5.0, "hide_jump_lines": True,
+            "dark_mode_enabled": True, "window_resolution": "1920x1080",
+            "start_color": "lime", "end_color": "red", "line_style": "Solid", "line_width": 1.5,
+            "show_grid": True, "coloring_mode": "3-Color Gradient", "solid_color": "cornflowerblue",
+            "gradient_color1": "gold", "gradient_color2": "hotpink", "gradient_color3": "dodgerblue",
+            "gradient_pos2": 50.0, "keep_aspect_ratio": True, "show_markers": True
+        }
+        if from_preset: defaults.update(from_preset)
+
+        # Walk parameters
+        self.num_steps = tk.IntVar(value=defaults["num_steps"]); self.step_min = tk.DoubleVar(value=defaults["step_min"]); self.step_max = tk.DoubleVar(value=defaults["step_max"])
+        self.start_x = tk.DoubleVar(value=defaults["start_x"]); self.start_y = tk.DoubleVar(value=defaults["start_y"]); self.start_z = tk.DoubleVar(value=defaults["start_z"])
+        self.drift_x = tk.DoubleVar(value=defaults["drift_x"]); self.drift_y = tk.DoubleVar(value=defaults["drift_y"]); self.drift_z = tk.DoubleVar(value=defaults["drift_z"])
+        self.dimension = tk.StringVar(value=defaults["dimension"]); self.jump_chance = tk.DoubleVar(value=defaults["jump_chance"])
+        self.jump_dist_min = tk.DoubleVar(value=defaults["jump_dist_min"]); self.jump_dist_max = tk.DoubleVar(value=defaults["jump_dist_max"]); self.hide_jump_lines = tk.BooleanVar(value=defaults["hide_jump_lines"])
+        
+        # Settings
+        self.dark_mode_enabled = tk.BooleanVar(value=defaults["dark_mode_enabled"]); self.window_resolution = tk.StringVar(value=defaults["window_resolution"])
+        self.file_size_info = tk.StringVar(value="")
+        
+        # Styling
+        self.start_color = tk.StringVar(value=defaults["start_color"]); self.end_color = tk.StringVar(value=defaults["end_color"]); self.line_style = tk.StringVar(value=defaults["line_style"])
+        self.line_width = tk.DoubleVar(value=defaults["line_width"]); self.show_grid = tk.BooleanVar(value=defaults["show_grid"])
+        self.coloring_mode = tk.StringVar(value=defaults["coloring_mode"]); self.solid_color = tk.StringVar(value=defaults["solid_color"])
+        self.gradient_color1 = tk.StringVar(value=defaults["gradient_color1"]); self.gradient_color2 = tk.StringVar(value=defaults["gradient_color2"]); self.gradient_color3 = tk.StringVar(value=defaults["gradient_color3"])
+        self.gradient_pos2 = tk.DoubleVar(value=defaults["gradient_pos2"])
+        self.keep_aspect_ratio = tk.BooleanVar(value=defaults["keep_aspect_ratio"])
+        self.show_markers = tk.BooleanVar(value=defaults["show_markers"])
+
+    def _create_controls(self):
+        """Create and layout all the control widgets using a tabbed notebook."""
+        self.controls_frame = ttk.Frame(self.master); self.controls_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
+        self.plot_frame = ttk.Frame(self.master); self.plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # --- Main Action Button ---
+        ttk.Button(self.controls_frame, text="Generate New Walk", command=self.run_simulation, style="Accent.TButton").pack(fill=tk.X, pady=10)
+        
+        # --- Notebook for Tabs ---
+        notebook = ttk.Notebook(self.controls_frame); notebook.pack(fill="both", expand=True)
+
+        # Tab 1: Walk & Jump
+        walk_jump_tab = ttk.Frame(notebook, padding=10); notebook.add(walk_jump_tab, text="Walk & Jump")
+        ttk.Label(walk_jump_tab, text="Dimensions:").grid(row=0, column=0, sticky="w"); ttk.Combobox(walk_jump_tab, textvariable=self.dimension, values=["2D", "3D"], state="readonly").grid(row=0, column=1, columnspan=2, sticky="ew")
+        ttk.Label(walk_jump_tab, text="Number of Steps:").grid(row=1, column=0, sticky="w"); ttk.Entry(walk_jump_tab, textvariable=self.num_steps).grid(row=1, column=1, columnspan=2, sticky="ew")
+        ttk.Label(walk_jump_tab, text="Step Range (Min/Max):").grid(row=2, column=0, columnspan=3, sticky="w", pady=(5,0)); ttk.Entry(walk_jump_tab, textvariable=self.step_min).grid(row=3, column=0, sticky="ew", padx=(0,2)); ttk.Entry(walk_jump_tab, textvariable=self.step_max).grid(row=3, column=1, columnspan=2, sticky="ew")
+        ttk.Label(walk_jump_tab, text="Starting Point (X,Y,Z):").grid(row=4, column=0, columnspan=3, sticky="w", pady=(5,0)); ttk.Entry(walk_jump_tab, textvariable=self.start_x).grid(row=5, column=0, sticky="ew", padx=(0,2)); ttk.Entry(walk_jump_tab, textvariable=self.start_y).grid(row=5, column=1, sticky="ew", padx=(0,2)); ttk.Entry(walk_jump_tab, textvariable=self.start_z).grid(row=5, column=2, sticky="ew")
+        ttk.Label(walk_jump_tab, text="Drift/Bias (X,Y,Z):").grid(row=6, column=0, columnspan=3, sticky="w", pady=(5,0)); ttk.Entry(walk_jump_tab, textvariable=self.drift_x).grid(row=7, column=0, sticky="ew", padx=(0,2)); ttk.Entry(walk_jump_tab, textvariable=self.drift_y).grid(row=7, column=1, sticky="ew", padx=(0,2)); ttk.Entry(walk_jump_tab, textvariable=self.drift_z).grid(row=7, column=2, sticky="ew")
+        ttk.Label(walk_jump_tab, text="Jump Chance (%):").grid(row=8, column=0, sticky="w", pady=(5,0)); ttk.Entry(walk_jump_tab, textvariable=self.jump_chance).grid(row=8, column=1, columnspan=2, sticky="ew", pady=(5,0))
+        ttk.Label(walk_jump_tab, text="Jump Distance (Min/Max):").grid(row=9, column=0, columnspan=3, sticky="w", pady=(5,0)); ttk.Entry(walk_jump_tab, textvariable=self.jump_dist_min).grid(row=10, column=0, sticky="ew", padx=(0,2)); ttk.Entry(walk_jump_tab, textvariable=self.jump_dist_max).grid(row=10, column=1, columnspan=2, sticky="ew")
+        ttk.Checkbutton(walk_jump_tab, text="Hide line during jumps", variable=self.hide_jump_lines).grid(row=11, column=0, columnspan=3, sticky="w", pady=5)
+
+        # Tab 2: Styling
+        style_tab = ttk.Frame(notebook, padding=10); notebook.add(style_tab, text="Styling")
+        colors = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'orange', 'purple', 'cornflowerblue', 'gold', 'hotpink', 'dodgerblue', 'lime', 'teal', 'silver', 'springgreen']
+        ttk.Label(style_tab, text="Coloring Mode:").grid(row=1, column=0, sticky="w"); self.coloring_mode_combo = ttk.Combobox(style_tab, textvariable=self.coloring_mode, values=["Solid Color", "2-Color Gradient", "3-Color Gradient"], state="readonly"); self.coloring_mode_combo.grid(row=1, column=1, sticky="ew"); self.coloring_mode_combo.bind("<<ComboboxSelected>>", self._on_coloring_mode_change)
+        self.solid_color_label = ttk.Label(style_tab, text="Line Color:"); self.solid_color_combo = ttk.Combobox(style_tab, textvariable=self.solid_color, values=colors)
+        self.grad1_label = ttk.Label(style_tab, text="Color 1 (Start):"); self.grad1_combo = ttk.Combobox(style_tab, textvariable=self.gradient_color1, values=colors)
+        self.grad2_label = ttk.Label(style_tab, text="Color 2 (Mid):"); self.grad2_combo = ttk.Combobox(style_tab, textvariable=self.gradient_color2, values=colors)
+        self.grad3_label = ttk.Label(style_tab, text="Color 3 (End):"); self.grad3_combo = ttk.Combobox(style_tab, textvariable=self.gradient_color3, values=colors)
+        self.grad_opts_frame = ttk.Frame(style_tab); ttk.Label(self.grad_opts_frame, text="Pos (%):").pack(side=tk.LEFT, padx=(0,5)); ttk.Entry(self.grad_opts_frame, textvariable=self.gradient_pos2, width=8).pack(side=tk.LEFT)
+        ttk.Label(style_tab, text="Start/End Pt Color:").grid(row=5, column=0, sticky="w"); ttk.Combobox(style_tab, textvariable=self.start_color, values=colors).grid(row=5, column=1, sticky="ew", padx=(0,2)); ttk.Combobox(style_tab, textvariable=self.end_color, values=colors).grid(row=5, column=2, sticky="ew")
+        ttk.Label(style_tab, text="Line Style:").grid(row=6, column=0, sticky="w"); ttk.Combobox(style_tab, textvariable=self.line_style, values=list(self.line_styles_map.keys()), state="readonly").grid(row=6, column=1, sticky="ew")
+        ttk.Checkbutton(style_tab, text="Show Grid", variable=self.show_grid).grid(row=7, column=1, sticky="w", pady=5)
+        ttk.Checkbutton(style_tab, text="Keep Aspect Ratio", variable=self.keep_aspect_ratio).grid(row=8, column=0, sticky="w", pady=5)
+        ttk.Checkbutton(style_tab, text="Show Start/End Markers", variable=self.show_markers).grid(row=8, column=1, sticky="w", pady=5)
+        self._on_coloring_mode_change()
+
+        # Tab 3: Settings & Export
+        settings_tab = ttk.Frame(notebook, padding=10); notebook.add(settings_tab, text="Settings & Export")
+        window_frame = ttk.LabelFrame(settings_tab, text="Window", padding=10); window_frame.pack(fill=tk.X, pady=5); resolutions = ["1200x900", "1600x900", "1920x1080", "Fullscreen"]; ttk.Combobox(window_frame, textvariable=self.window_resolution, values=resolutions, state="readonly").pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,5)); ttk.Button(window_frame, text="Apply", command=self._apply_resolution).pack(side=tk.LEFT)
+        preset_frame = ttk.LabelFrame(settings_tab, text="Presets", padding=10); preset_frame.pack(fill=tk.X, pady=10); ttk.Button(preset_frame, text="Load Preset...", command=self._load_preset).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,5)); ttk.Button(preset_frame, text="Save Preset...", command=self._save_preset).pack(side=tk.LEFT, expand=True, fill=tk.X)
+        export_frame = ttk.LabelFrame(settings_tab, text="Export", padding=10); export_frame.pack(fill=tk.X, pady=5); ttk.Button(export_frame, text="Save as Image...", command=self._save_figure).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 10)); ttk.Label(export_frame, textvariable=self.file_size_info).pack(side=tk.LEFT)
+        misc_frame = ttk.LabelFrame(settings_tab, text="Misc", padding=10); misc_frame.pack(fill=tk.X, pady=10); ttk.Checkbutton(misc_frame, text="Toggle Dark Mode", variable=self.dark_mode_enabled, command=self._toggle_dark_mode).pack(side=tk.LEFT, padx=5); ttk.Button(misc_frame, text="Reset to Defaults", command=self._reset_defaults).pack(side=tk.RIGHT, padx=5)
+        
+    def _create_plot(self): self.figure = Figure(dpi=100); self.canvas = FigureCanvasTkAgg(self.figure, master=self.plot_frame); self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True); self.toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame); self.toolbar.update()
+
+    def _apply_resolution(self): res = self.window_resolution.get(); self.master.state('zoomed') if res == "Fullscreen" else self.master.state('normal'); self.master.geometry(res)
+    
+    def _toggle_dark_mode(self): self._apply_theme(); self.run_simulation()
+
+    def _apply_theme(self):
+        is_dark = self.dark_mode_enabled.get(); theme = 'dark_background' if is_dark else 'seaborn-v0_8-whitegrid'; bg = '#2b2b2b' if is_dark else '#f0f0f0'; fg = 'white' if is_dark else 'black'; entry_bg = '#4a4a4a' if is_dark else 'white'
+        plt.style.use(theme); self.master.config(bg=bg); style = ttk.Style(self.master); style.theme_use('clam'); style.configure('.', background=bg, foreground=fg); style.configure('TFrame', background=bg); style.configure('TLabel', background=bg, foreground=fg); style.configure('TCheckbutton', background=bg, foreground=fg, selectcolor=bg); style.configure('TLabelframe', background=bg, bordercolor=fg); style.configure('TLabelframe.Label', background=bg, foreground=fg); style.configure('Accent.TButton', foreground='white', background='dodgerblue'); style.map('TEntry', fieldbackground=[('!disabled', entry_bg)], foreground=[('!disabled', fg)], insertcolor=[('!disabled', fg)]); style.map('TCombobox', fieldbackground=[('!disabled', entry_bg)], foreground=[('!disabled', fg)]); self.figure.patch.set_facecolor(bg); self.toolbar.config(background=bg); self.toolbar._message_label.config(background=bg, foreground=fg)
+        for button in self.toolbar.winfo_children(): button.config(background=bg)
+    
+    def _on_coloring_mode_change(self, event=None):
+        mode = self.coloring_mode.get(); self.solid_color_label.grid_remove(); self.solid_color_combo.grid_remove(); self.grad1_label.grid_remove(); self.grad1_combo.grid_remove(); self.grad2_label.grid_remove(); self.grad2_combo.grid_remove(); self.grad3_label.grid_remove(); self.grad3_combo.grid_remove(); self.grad_opts_frame.grid_remove()
+        if mode == "Solid Color": self.solid_color_label.grid(row=2, column=0, sticky="w"); self.solid_color_combo.grid(row=2, column=1, sticky="ew")
+        elif mode == "2-Color Gradient": self.grad1_label.grid(row=2, column=0, sticky="w"); self.grad1_combo.grid(row=2, column=1, sticky="ew"); self.grad3_label.grid(row=3, column=0, sticky="w"); self.grad3_combo.grid(row=3, column=1, sticky="ew")
+        elif mode == "3-Color Gradient": self.grad1_label.grid(row=2, column=0, sticky="w"); self.grad1_combo.grid(row=2, column=1, sticky="ew"); self.grad2_label.grid(row=3, column=0, sticky="w"); self.grad2_combo.grid(row=3, column=1, sticky="ew"); self.grad3_label.grid(row=4, column=0, sticky="w"); self.grad3_combo.grid(row=4, column=1, sticky="ew"); self.grad_opts_frame.grid(row=3, column=2, sticky="w", padx=10)
+
+    def _get_settings(self):
+        try:
+            settings = {"num_steps": self.num_steps.get(), "step_min": self.step_min.get(), "step_max": self.step_max.get(), "start_x": self.start_x.get(), "start_y": self.start_y.get(), "start_z": self.start_z.get(), "drift_x": self.drift_x.get(), "drift_y": self.drift_y.get(), "drift_z": self.drift_z.get(), "dimension": self.dimension.get(), "jump_chance": self.jump_chance.get(), "jump_dist_min": self.jump_dist_min.get(), "jump_dist_max": self.jump_dist_max.get(), "hide_jump_lines": self.hide_jump_lines.get(), "coloring_mode": self.coloring_mode.get(), "solid_color": self.solid_color.get(), "gradient_colors": [self.gradient_color1.get(), self.gradient_color2.get(), self.gradient_color3.get()], "gradient_pos2": self.gradient_pos2.get(), "start_color": self.start_color.get(), "end_color": self.end_color.get(), "line_style": self.line_style.get(), "line_width": self.line_width.get(), "show_grid": self.show_grid.get(), "keep_aspect_ratio": self.keep_aspect_ratio.get(), "show_markers": self.show_markers.get()}
+            if settings['num_steps'] <= 0: raise ValueError("Steps must be positive.")
+            if not (0 <= settings['gradient_pos2'] <= 100): raise ValueError("Color 2 Position must be between 0 and 100.")
+            return settings
+        except (ValueError, tk.TclError) as e: messagebox.showerror("Invalid Input", f"Please enter valid numbers.\nError: {e}"); return None
+
+    def _generate_walk_data(self, settings):
+        x, y, z = [settings["start_x"]], [settings["start_y"]], [settings["start_z"]]; jump_indices = []
+        for _ in range(settings["num_steps"]):
+            if random.uniform(0, 100) < settings["jump_chance"]:
+                if settings["hide_jump_lines"]: jump_indices.append(len(x))
+                jump_x = random.uniform(settings["jump_dist_min"], settings["jump_dist_max"]) * random.choice([-1, 1]); jump_y = random.uniform(settings["jump_dist_min"], settings["jump_dist_max"]) * random.choice([-1, 1])
+                x.append(x[-1] + jump_x); y.append(y[-1] + jump_y)
+                if settings["dimension"] == "3D": z.append(z[-1] + random.uniform(settings["jump_dist_min"], settings["jump_dist_max"]) * random.choice([-1, 1]))
+            else:
+                x.append(x[-1] + random.uniform(settings["step_min"], settings["step_max"]) + settings["drift_x"]); y.append(y[-1] + random.uniform(settings["step_min"], settings["step_max"]) + settings["drift_y"])
+                if settings["dimension"] == "3D": z.append(z[-1] + random.uniform(settings["step_min"], settings["step_max"]) + settings["drift_z"])
+        return np.array(x), np.array(y), np.array(z), jump_indices
+
+    def _create_gradient_cmap(self, settings):
+        colors = settings["gradient_colors"]; mode = settings["coloring_mode"]
+        if mode == "2-Color Gradient": nodes, color_map = [0.0, 1.0], [colors[0], colors[2]]
+        else: pos2 = settings["gradient_pos2"] / 100.0; nodes, color_map = [0.0, pos2, 1.0], [colors[0], colors[1], colors[2]]
+        sorted_nodes = sorted(zip(nodes, color_map)); nodes, color_map = [item[0] for item in sorted_nodes], [item[1] for item in sorted_nodes]
+        cmap_dict = {'red': [], 'green': [], 'blue': []};
+        for i, node in enumerate(nodes): r, g, b, _ = plt.cm.colors.to_rgba(color_map[i]); cmap_dict['red'].append((node, r, r)); cmap_dict['green'].append((node, g, g)); cmap_dict['blue'].append((node, b, b))
+        return LinearSegmentedColormap('custom_gradient', segmentdata=cmap_dict)
+
+    def _plot_walk(self, data, settings):
+        x, y, z, jump_indices = data; self.figure.clear(); is_3d = settings["dimension"] == "3D"; self.ax = self.figure.add_subplot(111, projection='3d' if is_3d else None)
+        line_segments_indices = []; start = 0
+        for end in jump_indices: line_segments_indices.append((start, end)); start = end
+        line_segments_indices.append((start, len(x)))
+        for start_idx, end_idx in line_segments_indices:
+            if start_idx >= end_idx - 1: continue
+            seg_x, seg_y, seg_z = x[start_idx:end_idx], y[start_idx:end_idx], z[start_idx:end_idx]
+            if settings["coloring_mode"] == "Solid Color":
+                plot_args = {'color': settings["solid_color"], 'linewidth': settings["line_width"], 'linestyle': self.line_styles_map[settings["line_style"]]}
+                if is_3d: self.ax.plot(seg_x, seg_y, seg_z, **plot_args)
+                else: self.ax.plot(seg_x, seg_y, **plot_args)
+            else:
+                points = np.array([seg_x, seg_y]).T.reshape(-1, 1, 2)
+                if is_3d: points = np.array([seg_x, seg_y, seg_z]).T.reshape(-1, 1, 3)
+                segments = np.concatenate([points[:-1], points[1:]], axis=1); cmap = self._create_gradient_cmap(settings); norm = plt.Normalize(0, settings["num_steps"]); t = np.linspace(start_idx, end_idx, len(seg_x))
+                lc = Line3DCollection(segments, cmap=cmap, norm=norm) if is_3d else LineCollection(segments, cmap=cmap, norm=norm)
+                lc.set_array(t); lc.set_linewidth(settings["line_width"]); lc.set_linestyle(self.line_styles_map[settings["line_style"]]); self.ax.add_collection(lc)
+        if settings["show_markers"] and len(x) > 0:
+            if is_3d: self.ax.scatter(x[0], y[0], z[0], color=settings["start_color"], s=100, zorder=5, label="Start"); self.ax.scatter(x[-1], y[-1], z[-1], color=settings["end_color"], s=100, zorder=5, label="End"); self.ax.set_zlabel("Z-axis")
+            else: self.ax.scatter(x[0], y[0], color=settings["start_color"], s=100, zorder=5, label="Start"); self.ax.scatter(x[-1], y[-1], color=settings["end_color"], s=100, zorder=5, label="End")
+        
+        if settings["keep_aspect_ratio"]:
+            if is_3d: all_points = np.concatenate([x,y,z]); center = np.mean([all_points.min(), all_points.max()]); radius = np.max([x.max()-x.min(), y.max()-y.min(), z.max()-z.min()]) / 2.0; self.ax.set_xlim([center - radius, center + radius]); self.ax.set_ylim([center - radius, center + radius]); self.ax.set_zlim([center - radius, center + radius])
+            else: self.ax.set_aspect('equal', adjustable='box')
+        
+        self.ax.autoscale_view(tight=True); self.ax.set_title(f"{settings['dimension']} Random Walk ({settings['num_steps']} steps)"); self.ax.set_xlabel("X-axis"); self.ax.set_ylabel("Y-axis"); self.ax.grid(settings["show_grid"]); self.ax.legend(); self.canvas.draw()
+
+    def _reset_defaults(self):
+        if messagebox.askokcancel("Reset Settings", "Are you sure you want to reset all settings to their default values?"): self._initialize_variables(); self._on_coloring_mode_change(); self.run_simulation()
+    
+    def _save_preset(self):
+        settings = self._get_settings();
+        if settings is None: return
+        filepath = filedialog.asksaveasfilename(title="Save Preset", defaultextension=".json", filetypes=[("JSON Files", "*.json")])
+        if not filepath: return
+        try:
+            native_settings = {k: v.get() if isinstance(v, tk.Variable) else v for k, v in settings.items()}
+            with open(filepath, 'w') as f: json.dump(native_settings, f, indent=4)
+            messagebox.showinfo("Success", "Preset saved successfully.")
+        except Exception as e: messagebox.showerror("Error", f"Failed to save preset:\n{e}")
+
+    def _load_preset(self):
+        filepath = filedialog.askopenfilename(title="Load Preset", filetypes=[("JSON Files", "*.json")])
+        if not filepath: return
+        try:
+            with open(filepath, 'r') as f: preset_data = json.load(f)
+            self._initialize_variables(from_preset=preset_data); self._on_coloring_mode_change(); self.run_simulation()
+        except Exception as e: messagebox.showerror("Error", f"Failed to load preset:\n{e}")
+    
+    def _save_figure(self):
+        settings = self._get_settings(); filepath = filedialog.asksaveasfilename(title="Save Walk as Image", initialfile=f"random_walk_{settings['num_steps']}_steps.png", defaultextension=".png", filetypes=[("PNG Image", "*.png"), ("JPEG Image", "*.jpg"), ("SVG Vector", "*.svg")])
+        if not filepath: return
+        try:
+            dpi = 300 + int(np.log10(settings['num_steps'] + 1) * 50)
+            self.figure.savefig(filepath, dpi=dpi, facecolor=self.figure.get_facecolor())
+            file_size = os.path.getsize(filepath)
+            self.file_size_info.set(f"Saved! ({round(file_size/1024**2, 2)} MB)")
+        except Exception as e: self.file_size_info.set("Save failed."); messagebox.showerror("Save Error", f"An error occurred:\n{e}")
+
+    def run_simulation(self):
+        settings = self._get_settings();
+        if settings is None: return
+        walk_data = self._generate_walk_data(settings)
+        self._plot_walk(walk_data, settings)
+        self.file_size_info.set("")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = RandomWalkApp(root)
+    root.mainloop()
